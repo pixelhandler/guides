@@ -1,237 +1,186 @@
-When a component is used inside a template, it has the ability to send
-actions to that template's controller and routes. These allow the
-component to inform the application when important events, such as the
-user clicking a particular element in a component, occur.
+You can think of a component as a black box of UI functionality. So far,
+you've learned about how parent components can pass attributes in to a
+component, and how the component can use those attributes from both
+JavaScript and its Handlebars template.
 
-Like the `{{action}}` Handlebars helper, actions sent from components
-first go to the template's controller. If the controller does not
-implement a handler for that action, it will bubble to the template's
-route, and then up the route hierarchy. For more information about this
-bubbling behavior, see [Action
-Bubbling](../../templates/actions/#toc_action-bubbling).
+But what about the opposite direction? How does data flow back out of
+the component to the parent? In Ember, components use something called
+**actions** to communicate events and changes.
 
-Components are designed to be reusable across different parts of your
-application. In order to achieve this reusability, it's important that
-the actions that your components send can be specified when the component
-is used in a template.
+To the outside world, a component is entirely self-contained: a black
+box where attributes go in, and actions come out.
 
-In other words, if you were writing a button component, you would not
-want to send a `click` action, because it is ambiguous and likely to
-conflict with other components on the page. Instead, you would want to
-allow the person using the component to specify which action to send
-when the button was clicked.
+### A Simple Action
 
-Luckily, components have a `sendAction()` method that allows them to
-send actions specified when the component is used in a template.
+Let's look at a simple example of how a component can use an action to
+communicate with its parent.
 
-### Sending a Primary Action
-
-Many components only send one kind of action. For example, a button
-component might send an action when it is clicked on; this is the
-_primary action_.
-
-To set a component's primary action, set its `action` attribute in
-Handlebars:
-
-```handlebars
-{{my-button action="showUser"}}
-```
-
-This tells the `my-button` component that it should send the `showUser`
-action when it triggers its primary action.
-
-So how do you trigger sending a component's primary action? After
-the relevant event occurs, you can call the `sendAction()` method
-without arguments:
-
-```app/components/my-button.js
-export default Ember.Component.extend({
-  click() {
-    this.sendAction();
-  }
-});
-```
-
-In the above example, the `my-button` component will send the `showUser`
-action when the component is clicked.
-
-### Sending Parameters with an Action
-
-You may want to provide additional context to the route or controller
-handling an action. For example, a button component may want to tell a
-controller not only that _an_ item was deleted, but also _which_ item.
-
-To send parameters with the primary action, call `sendAction()` with the
-string `'action'` as the first argument and any additional parameters
-following it:
-
-```js
-this.sendAction('action', param1, param2);
-```
-
-For example, imagine we're building a todo list that allows the user to
-delete a todo:
-
-```app/routes/index.js
-export default Ember.Route.extend({
-  model() {
-    return this.store.findAll('todo');
-  },
-
-  actions: {
-    deleteTodo(todo) {
-      todo.destroyRecord();
-    }
-  }
-});
-```
-
-```app/templates/index.hbs
-{{#each model.todos as |todo|}}
-  <p>{{todo.title}} <button {{action "deleteTodo" todo}}>Delete</button></p>
-{{/each}}
-```
-
-We want to update this app so that, before actually deleting a todo, the
-user must confirm that this is what they intended. We'll implement a
-component that first double-checks with the user before completing the
+Imagine we're building an application where users can have accounts. We
+need to build the UI for users to delete their account. Because we don't
+want users to accidentally delete their accounts, we'll build a button
+that requires the user to double click it in order to trigger some
 action.
 
-In the component, when triggering the primary action, we'll pass an
-additional argument that the component user can specify:
+Best of all, because components are "black boxes" that aren't coupled to
+their parent component, once we create this "double click button"
+component we can reuse it all over our application.
 
-```app/components/confirm-button.js
+Let's call our component `double-click-button`. We can create it by
+typing:
+
+```text
+ember generate component double-click-button
+```
+
+Remember that you can use this component from a template like this:
+
+```hbs
+{{double-click-button}}
+```
+
+When implementing an action, you need to break it down into two steps:
+
+1. In the outside world, decide how you want to react to the action.
+2. In the component, determine when something has happened, and tell the
+   outside world.
+
+In this example, that means:
+
+1. In the outside world, interpret double clicks on the button as "the
+   user wants to delete their account."
+2. In the component, detect that the user has double clicked the button
+   and trigger the action.
+
+Let's take it step by step.
+
+In the outside world, let's first define what we want to happen when the
+user double clicks the button. In this case, we'll find the user's
+account and delete it.
+
+Where do you put code that should be triggered by an action? In Ember,
+each component can have an `actions` hash where code that is triggered
+by child components can go. Let's look at what the parent component's
+JavaScript might look like. In this example, imagine we have a parent
+component called `user-profile` that shows the user's profile to them.
+
+```app/components/user-profile.js
 export default Ember.Component.extend({
+  login: Ember.inject.service(),
+
   actions: {
-    showConfirmation() {
-      this.toggleProperty('isShowingConfirmation');
-    },
-
-    confirm() {
-      this.toggleProperty('isShowingConfirmation');
-      this.sendAction('action', this.get('param'));
+    userDidDeleteAccount() {
+      this.get('login').deleteUser();
     }
   }
 });
 ```
 
-```app/templates/components/confirm-button.hbs
-{{#if isShowingConfirmation}}
-  <button {{action "confirm"}}>Click again to confirm</button>
-{{else}}
-  <button {{action "showConfirmation"}}>{{title}}</button>
-{{/if}}
+In this example, we have an action on the parent component called
+`userDidDeleteAccount()` that, when called, gets a hypothetical `login`
+service and calls the service's `deleteUser()` method. However, we have
+not told Ember when we want this action to be triggered, which is the
+next step.
+
+What comes next is arguably the most important part of building a
+component: deciding what the event that triggers the action should be
+called.
+
+In this example, we want something to happen whenever the component is
+double clicked. Let's call this event `onDoubleClick`. We can tell Ember
+to trigger the `userDidDeleteAccount()` action on our parent whenever
+the child component's `onDoubleClick` event is called:
+
+```app/components/user-profile.hbs
+{{double-click-button onDoubleClick=(action 'userDidDeleteAccount')}}
 ```
 
-Now we can update our initial template and replace the `{{action}}`
-helper with our new component:
+This snippet says "take the `userDidDeleteAccount` action from the
+parent and make it available on the child component as
+`onDoubleClick`."
 
-```app/templates/index.hbs
-{{#each model.todos as |todo|}}
-  <p>{{todo.title}} {{confirm-button title="Delete" action="deleteTodo" param=todo}}</p>
-{{/each}}
-```
+Next, how do we detect that a user has double clicked our component?
+Ember has built-in support for common browser events like this. In this
+case, in our component's JavaScript, we can implement a method called
+`doubleClick()`. Every time the user double clicks this component, Ember
+will trigger the `doubleClick()` method.
 
-Note that we've specified the action to send by setting the component's
-`action` attribute, and we've specified which argument should be sent as
-a parameter by setting the component's `param` attribute.
-
-### Sending Multiple Actions
-
-Depending on the complexity of your component, you may need to let users
-specify multiple different actions for different events that your
-component can generate.
-
-For example, imagine that you're writing a form component that the user
-can either submit or cancel. Depending on which button the user clicks,
-you want to send a different action to your controller or route.
-
-You can specify _which_ action to send by passing the name of the event
-as the first argument to `sendAction()`. For example, you can specify two
-actions when using the form component:
-
-```app/templates/index.hbs
-{{user-form submit="createUser" cancel="cancelUserCreation"}}
-```
-
-```app/controllers/index.js
-export default Ember.Controller.extend({
- actions: {
-    createUser(user) {
-      alert(`Created user ${user.name} with bio ${user.bio}.`);
-    },
-    cancelUserCreation() {
-      alert("Canceled user creation.");
-    }
-  }
-});
-```
-
-In this case, you can send the `createUser` action by calling
-`this.sendAction('submit')`, or send the `cancelUserCreation` action by
-calling `this.sendAction('cancel')`:
-
-```app/components/user-form.js
+```app/components/double-click-button.js
 export default Ember.Component.extend({
-  actions: {
-    submit() {
-      this.sendAction('submit', {
-        name: this.get('name'),
-        bio: this.get('bio')
-      });
-    },
-    cancel() {
-      this.sendAction('cancel');
-    }
+  tagName: 'button',
+
+  // This method is called every time the user double clicks the
+  // component.
+  doubleClick() {
   }
 });
 ```
 
-```app/templates/components/user-form.hbs
-<form {{action "submit" on="submit"}}>
-  <p><label>Name {{input type="text" value=name}}</label></p>
-  <p><label>Bio {{textarea value=bio}}</label></p>
-  <button {{action "cancel"}}>Cancel</button>
-  <input type="submit">
-</form>
-```
+Now that we've implemented a method to detect whenever a double click
+happens, we still need to tell the outside world to trigger the
+`userDidDeleteAccount` action that we've been given.  Let's do that now.
 
-### Actions That Aren't Specified
+One important thing to know about actions is that they're **just
+functions** you can call, like any other method on your component.
 
-If someone using your component does not specify an action for a
-particular event, calling `sendAction()` has no effect.
+In this case, the components `onDoubleClick` method is a function that
+will call the parent component's `userDidDeleteAccount` action. Here's
+how to call it:
 
-For example, if you define a component that triggers the primary action
-on click:
-
-```app/components/my-button.js
+```app/components/double-click-button.js
 export default Ember.Component.extend({
-  click() {
-    this.sendAction();
+  tagName: 'button',
+
+  doubleClick() {
+    this.onDoubleClick();
   }
 });
 ```
 
-Using this component without assigning a primary action will have no
-effect if the user clicks it:
+That's it! Under the hood, `onDoubleClick` is a function that knows how
+to break through the normal isolation of components and trigger the
+`userDidDeleteAccount` on its parents.
 
-```handlebars
-{{my-button}}
+Just like normal attributes, actions set a property on the component;
+the only difference is that the property is actually a function that
+knows how to trigger behavior in the parent component.
+
+That makes it easy to remember how to add an action to a component. It's
+just like passing an attribute, but you use the `action` helper to pass
+a function instead. In the future, for example, we may want to be able
+to pass a `title` attribute to the `double-click-button` component. You
+can see how similar the syntax is:
+
+```app/component/user-profile.hbs
+{{double-click-button
+  title="Delete Account"
+  onDoubleClick=(action 'userDidDeleteAccount')}}
 ```
 
-### Thinking About Component Actions
+You may have noticed that component actions are similar to another
+concept in JavaScript: **callbacks**. You can think of actions as being
+like callbacks for components.
 
-In general, you should think of component actions as translating a
-_primitive event_ (like a mouse click or an `<audio>` element's `pause`
-event) into actions that have meaning within your application.
+In JavaScript, you can pass a callback to a function that it can invoke
+at a later time. For example, we might have a helper function that takes
+a callback and adds it as an event listener on an element:
 
-This allows your routes and controllers to implement action handlers
-with names like `deleteTodo` or `songDidPause` instead of vague names
-like `click` or `pause` that may be ambiguous to other developers when
-read out of context.
+```js
+function onClick(element, callback) {
+  element.addEventListener('click', callback);
+}
 
-Another way to think of component actions is as the _public API_ of your
-component. Thinking about which events in your component can trigger
-actions in their application is the primary way other developers will
-use your component. In general, keeping these events as generic as
-possible will lead to components that are more flexible and reusable.
+let element = document.getElementById('delete-button');
+onClick(element, () => {
+  alert("button clicked!");
+});
+```
+
+In this example, we pass a callback function to the `onClick` function
+that will be called whenever the button is clicked. This pattern allows
+us to separate the functionality of listening for a click (the `onClick`
+function) from what should happen when the click happens (the passed
+callback).
+
+Like callbacks in JavaScript, actions in components allow you to
+decouple an event happening from how it's handled, leading to modular,
+more reusable components.
